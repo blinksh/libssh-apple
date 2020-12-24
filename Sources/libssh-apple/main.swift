@@ -2,7 +2,7 @@ import Foundation
 import FMake
 
 enum Config {
-  static let libsshOrigin = "git@github.com:yury/libssh.git"
+  static let libsshOrigin = "https://github.com/yury/libssh.git"
   static let libsshBranch = "openssl-1.1.1i"
   static let libsshVersion = "0.9.4"
   

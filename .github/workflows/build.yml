@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    tags:
+    - 'v*'
+
+jobs:
+  build:
+    name: Building release assets
+    runs-on: macOS-latest
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: xcode-select
+      run: sudo xcode-select -s /Applications/Xcode_12.3.app
+
+    - name: install abimap
+      run: sudo pip3 install abimap
+
+    - name: build-libssh
+      run: swift run
+
+    - name: zip static xcframework
+      run: cd xcframeworks/static && zip -r ../../libssh-static.xcframework.zip libssh.xcframework
+    
+    - name: zip dynamic xcframework
+      run: cd xcframeworks/dynamic && zip -r ../../libssh-dynamic.xcframework.zip libssh.xcframework
+
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset Dynamic
+      id: upload-release-asset-dynamic
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }} 
+        asset_path: ./libssh-dynamic.xcframework.zip
+        asset_name: libssh-dynamic.xcframework.zip
+        asset_content_type: application/zip
+
+    - name: Upload Release Asset Static
+      id: upload-release-asset-static 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }} 
+        asset_path: ./libssh-static.xcframework.zip
+        asset_name: libssh-static.xcframework.zip
+        asset_content_type: application/zip

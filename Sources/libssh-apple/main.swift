@@ -205,9 +205,9 @@ try mkdir("xcframeworks/static")
 
 let xcframeworkName = "\(Config.frameworkName).xcframework"
 let xcframeworkdDynamicZipName = "\(Config.frameworkName)-dynamic.xcframework.zip"
-let xcframeworkdStaticZipName = "\(Config.frameworkName)-dynamic.xcframework.zip"
-try? sh("rm \(xcframeworkdStaticZipName)")
+let xcframeworkdStaticZipName = "\(Config.frameworkName)-static.xcframework.zip"
 try? sh("rm \(xcframeworkdDynamicZipName)")
+try? sh("rm \(xcframeworkdStaticZipName)")
 
 try sh(
   "xcodebuild -create-xcframework \(dynamicFrameworkPaths.map {"-framework \($0)"}.joined(separator: " ")) -output xcframeworks/dynamic/\(xcframeworkName)"
@@ -223,7 +223,7 @@ try sh(
 
 
 try cd("xcframeworks/static/") {
-  try sh("zip ../../\(xcframeworkdDynamicZipName) \(xcframeworkName)")
+  try sh("zip ../../\(xcframeworkdStaticZipName) \(xcframeworkName)")
 }
 
 

@@ -41,8 +41,8 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }} 
-        asset_path: ./libssh-dynamic.xcframework.zip
-        asset_name: libssh-dynamic.xcframework.zip
+        asset_path: ./LibSSH-dynamic.xcframework.zip
+        asset_name: LibSSH-dynamic.xcframework.zip
         asset_content_type: application/zip
 
     - name: Upload Release Asset Static
@@ -52,6 +52,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }} 
-        asset_path: ./libssh-static.xcframework.zip
-        asset_name: libssh-static.xcframework.zip
+        asset_path: ./LibSSH-static.xcframework.zip
+        asset_name: LibSSH-static.xcframework.zip
         asset_content_type: application/zip

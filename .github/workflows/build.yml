@@ -22,12 +22,6 @@ jobs:
     - name: build-libssh
       run: swift run
 
-    - name: zip static xcframework
-      run: cd xcframeworks/static && zip -r ../../libssh-static.xcframework.zip libssh.xcframework
-    
-    - name: zip dynamic xcframework
-      run: cd xcframeworks/dynamic && zip -r ../../libssh-dynamic.xcframework.zip libssh.xcframework
-
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
@@ -36,6 +30,7 @@ jobs:
       with:
         tag_name: ${{ github.ref }}
         release_name: Release ${{ github.ref }}
+        body_path: release.md
         draft: false
         prerelease: false
 

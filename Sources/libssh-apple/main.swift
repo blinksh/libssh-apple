@@ -14,6 +14,8 @@ enum Config {
   static let platforms: [Platform] = Platform.allCases
 }
 
+OutputLevel.default = .error
+
 extension Platform {
   var deploymentTarget: String {
     switch self {
@@ -201,10 +203,36 @@ try? sh("rm -rf xcframeworks")
 try mkdir("xcframeworks/dynamic")
 try mkdir("xcframeworks/static")
 
+let xcframeworkName = "\(Config.frameworkName).xcframework"
+let xcframeworkdDynamicZipName = "\(Config.frameworkName)-dynamic.xcframework.zip"
+let xcframeworkdStaticZipName = "\(Config.frameworkName)-dynamic.xcframework.zip"
+try? sh("rm \(xcframeworkdStaticZipName)")
+try? sh("rm \(xcframeworkdDynamicZipName)")
+
 try sh(
-  "xcodebuild -create-xcframework \(dynamicFrameworkPaths.map {"-framework \($0)"}.joined(separator: " ")) -output xcframeworks/dynamic/\(Config.frameworkName).xcframework"
+  "xcodebuild -create-xcframework \(dynamicFrameworkPaths.map {"-framework \($0)"}.joined(separator: " ")) -output xcframeworks/dynamic/\(xcframeworkName)"
 )
+
+try cd("xcframeworks/dynamic/") {
+  try sh("zip ../../\(xcframeworkdDynamicZipName) \(xcframeworkName)")
+}
 
 try sh(
   "xcodebuild -create-xcframework \(staticFrameworkPaths.map {"-framework \($0)"}.joined(separator: " ")) -output xcframeworks/static/\(Config.frameworkName).xcframework"
 )
+
+
+try cd("xcframeworks/static/") {
+  try sh("zip ../../\(xcframeworkdDynamicZipName) \(xcframeworkName)")
+}
+
+
+let releaseMD =
+  """
+    | File                          | MD5                                          |
+    | ----------------------------- |:--------------------------------------------:|
+    | \(xcframeworkdDynamicZipName) | \(try md5(path: xcframeworkdDynamicZipName)) |
+    | \(xcframeworkdStaticZipName)  | \(try md5(path: xcframeworkdStaticZipName))  |
+  """
+
+try write(content: releaseMD, atPath: "release.md")

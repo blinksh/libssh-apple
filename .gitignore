@@ -7,9 +7,8 @@ xcuserdata/
 lib/
 bin/
 libssh/
-openssl-dynamic.frameworks.zip
 openssl-frameworks/
-openssl-libs.zip
+*.zip
 openssl/
 frameworks/
 xcframeworks/

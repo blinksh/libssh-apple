@@ -13,3 +13,4 @@ openssl/
 frameworks/
 xcframeworks/
 apple.cmake
+release.md

@@ -229,10 +229,10 @@ try cd("xcframeworks/static/") {
 
 let releaseMD =
   """
-    | File                          | MD5                                          |
+    | File                          | SHA256                                       |
     | ----------------------------- |:--------------------------------------------:|
-    | \(xcframeworkdDynamicZipName) | \(try md5(path: xcframeworkdDynamicZipName)) |
-    | \(xcframeworkdStaticZipName)  | \(try md5(path: xcframeworkdStaticZipName))  |
+    | \(xcframeworkdDynamicZipName) | \(try sha(path: xcframeworkdDynamicZipName)) |
+    | \(xcframeworkdStaticZipName)  | \(try sha(path: xcframeworkdStaticZipName))  |
   """
 
 try write(content: releaseMD, atPath: "release.md")

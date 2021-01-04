@@ -218,7 +218,7 @@ try cd("xcframeworks/dynamic/") {
 }
 
 try sh(
-  "xcodebuild -create-xcframework \(staticFrameworkPaths.map {"-framework \($0)"}.joined(separator: " ")) -output xcframeworks/static/\(xcframeworkName))"
+  "xcodebuild -create-xcframework \(staticFrameworkPaths.map {"-framework \($0)"}.joined(separator: " ")) -output xcframeworks/static/\(xcframeworkName)"
 )
 
 

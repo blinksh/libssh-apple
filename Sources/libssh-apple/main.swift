@@ -1,6 +1,8 @@
 import Foundation
 import FMake
 
+OutputLevel.default = .error
+
 enum Config {
   static let libsshOrigin = "https://github.com/yury/libssh.git"
   static let libsshBranch = "openssl-1.1.1i"
@@ -13,8 +15,6 @@ enum Config {
   
   static let platforms: [Platform] = Platform.allCases
 }
-
-OutputLevel.default = .error
 
 extension Platform {
   var deploymentTarget: String {
@@ -43,7 +43,7 @@ try sh("unzip openssl-dynamic.frameworks.zip -d openssl-frameworks")
 
 
 let fm = FileManager.default
-let cwd = FileManager.default.currentDirectoryPath
+let cwd = fm.currentDirectoryPath
 let opensslLibsRoot = "\(cwd)/openssl/libs/"
 let toolchain = "\(cwd)/apple.cmake"
 
@@ -183,7 +183,7 @@ for p in Config.platforms {
     "bin/\(p.name)-\(arch).sdk/tmp/*.a"
   }
   
-  try sh("libtool -static -o \(frameworkStaticPath)/libssh \(aFiles.joined(separator: " "))")
+  try sh("libtool -static -o \(frameworkStaticPath)/\(Config.frameworkName) \(aFiles.joined(separator: " "))")
   
   let dylibFiles = p.archs.map { arch -> String in
     "bin/\(p.name)-\(arch).sdk/\(Config.frameworkName)"

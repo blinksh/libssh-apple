@@ -53,11 +53,18 @@ var dynamicFrameworkPaths: [String] = []
 var staticFrameworkPaths: [String] = []
 
 for p in Config.platforms {
+  let ldflags = "-fembed-bitcode"
+  let cflags = "-fembed-bitcode"
+  let cppflags = "-fembed-bitcode"
+
   var env = try [
     "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "",
     "APPLE_PLATFORM": p.sdk,
     "APPLE_SDK_PATH": p.sdkPath(),
-    "SECOND_FIND_ROOT_PATH": "\(opensslLibsRoot + p.name)/openssl"
+    "SECOND_FIND_ROOT_PATH": "\(opensslLibsRoot + p.name)/openssl",
+    "LDFLAGS": ldflags,
+    "CFLAGS": cflags,
+    "CPPFLAGS": cppflags
   ]
 
   let frameworkDynamicPath = "frameworks/dynamic/\(p.name)/\(Config.frameworkName).framework"
@@ -70,8 +77,8 @@ for p in Config.platforms {
     print(env)
     
     if p == .Catalyst {
-      env["LDFLAGS"] = "-target \(arch)-apple-ios14.0-macabi"
-      env["CFLAGS"] = "-target \(arch)-apple-ios14.0-macabi"
+      env["LDFLAGS"] = ldflags + " -target \(arch)-apple-ios14.0-macabi"
+      env["CFLAGS"] = cflags + " -target \(arch)-apple-ios14.0-macabi"
     }
     
     let libPath = "lib/\(p.name)-\(arch).sdk"

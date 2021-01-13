@@ -128,6 +128,7 @@ for p in Config.platforms {
     try sh(
       "ld",
       "\(binPath)/obj/*.o",
+      "-bitcode_bundle",
       "-dylib",
       "-lSystem",
       "-lz",

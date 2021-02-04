@@ -8,8 +8,8 @@ enum Config {
   static let libsshBranch = "openssl-1.1.1i"
   static let libsshVersion = "0.9.4"
   
-  static let opensslLibsURL       = "https://github.com/yury/openssl-apple/releases/download/v1.1.1i/openssl-libs.zip"
-  static let opensslFrameworksURL = "https://github.com/yury/openssl-apple/releases/download/v1.1.1i/openssl-dynamic.frameworks.zip"
+  static let opensslLibsURL       = "https://github.com/blinksh/openssl-apple/releases/download/v1.1.1i/openssl-libs.zip"
+  static let opensslFrameworksURL = "https://github.com/blinksh/openssl-apple/releases/download/v1.1.1i/openssl-dynamic.frameworks.zip"
   
   static let frameworkName = "LibSSH"
   

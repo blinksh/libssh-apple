@@ -7,15 +7,12 @@ let package = Package(
   name: "libssh-apple",
   platforms: [.macOS("11")],
   dependencies: [
-    .package(url: "https://github.com/yury/FMake", from : "0.0.5"),
+    .package(url: "https://github.com/yury/FMake", from : "0.0.6"),
 //    .package(path: "../FMake")
   ],
   targets: [
     .target(
       name: "libssh-apple",
       dependencies: ["FMake"]),
-    .testTarget(
-      name: "libssh-appleTests",
-      dependencies: ["libssh-apple"]),
   ]
 )

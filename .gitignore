@@ -14,3 +14,4 @@ frameworks/
 xcframeworks/
 apple.cmake
 release.md
+Package.resolved

@@ -99,7 +99,7 @@ for p in Config.platforms {
       "-DCMAKE_OSX_DEPLOYMENT_TARGET=\(p.deploymentTarget)",
       "-DBUILD_SHARED_LIBS=OFF",
       "-DWITH_EXAMPLES=OFF",
-      "-DCMAKE_BUILD_TYPE=Release",
+      "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
       "-DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO",
       "-DCMAKE_SYSTEM_PROCESSOR=\(arch)",
 //      "-DCMAKE_C_FLAGS=\"-target x86_64-apple-ios13.0-macabi -mios-version-min=13.0 -isystem \(try p.sdkPath())/System/iOSSupport/usr/include -iframework /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.1.sdk/System/iOSSupport/System/Library/Frameworks\"",
@@ -111,7 +111,7 @@ for p in Config.platforms {
     try sh(
       "cmake",
       "--build \(binPath)",
-      "--config Release",
+      "--config RelWithDebInfo",
       "--target install"
     )
     

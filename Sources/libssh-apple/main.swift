@@ -54,8 +54,8 @@ var staticFrameworkPaths: [String] = []
 
 for p in Config.platforms {
   let ldflags = "-fembed-bitcode"
-  let cflags = "-fembed-bitcode"
-  let cppflags = "-fembed-bitcode"
+  let cflags = "-fembed-bitcode -fobjc-arc"
+  let cppflags = "-fembed-bitcode -fobjc-arc"
 
   var env = try [
     "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "",

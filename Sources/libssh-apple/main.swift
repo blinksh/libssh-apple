@@ -4,8 +4,8 @@ import FMake
 OutputLevel.default = .error
 
 enum Config {
-  static let libsshOrigin = "https://github.com/yury/libssh.git"
-  static let libsshBranch = "openssl-1.1.1i"
+  static let libsshOrigin = "https://github.com/blinksh/libssh.git"
+  static let libsshBranch = "LibSSHBlockRunLoop"
   static let libsshVersion = "0.9.4"
   
   static let opensslLibsURL       = "https://github.com/blinksh/openssl-apple/releases/download/v1.1.1k/openssl-libs.zip"

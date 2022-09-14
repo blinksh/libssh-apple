@@ -13,6 +13,11 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: cmake install
+      uses: jwlawson/actions-setup-cmake@v1.12
+      with:
+        cmake-version: '3.22.2'
+
     - name: install abimap
       run: sudo pip3 install abimap
 

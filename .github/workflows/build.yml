@@ -14,7 +14,7 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: xcode-select
-      run: sudo xcode-select -s /Applications/Xcode_12.3.app
+      run: sudo xcode-select -s /Applications/Xcode_13.4.app
 
     - name: install abimap
       run: sudo pip3 install abimap

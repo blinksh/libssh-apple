@@ -6,7 +6,7 @@ OutputLevel.default = .error
 enum Config {
   static let libsshOrigin = "https://github.com/blinksh/libssh.git"
   static let libsshBranch = "LibSSHBlockRunLoop"
-  static let libsshVersion = "0.9.4"
+  static let libsshVersion = "0.9.8"
   
   static let opensslLibsURL       = "https://github.com/blinksh/openssl-apple/releases/download/v1.1.1k/openssl-libs.zip"
   static let opensslFrameworksURL = "https://github.com/blinksh/openssl-apple/releases/download/v1.1.1k/openssl-dynamic.frameworks.zip"

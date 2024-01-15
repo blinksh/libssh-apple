@@ -7,7 +7,7 @@ let package = Package(
   name: "libssh-apple",
   platforms: [.macOS("11")],
   dependencies: [
-    .package(url: "https://github.com/yury/FMake", from : "0.0.16"),
+    .package(url: "https://github.com/blinksh/FMake", from : "0.0.16"),
 //    .package(path: "../FMake")
   ],
   targets: [

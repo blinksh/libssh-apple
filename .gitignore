@@ -9,9 +9,8 @@ bin/
 libssh/
 openssl-frameworks/
 *.zip
-openssl/
 frameworks/
 xcframeworks/
-apple.cmake
 release.md
+cmake.rb
 Package.resolved

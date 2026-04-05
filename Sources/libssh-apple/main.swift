@@ -8,15 +8,16 @@ enum Config {
   static let libsshBranch = "LibSSHBlockRunLoop"
   static let libsshVersion = "0.9.8"
   
-  static let opensslLibsURL       = "https://github.com/blinksh/openssl-apple/releases/download/v1.1.1k/openssl-libs.zip"
-  static let opensslFrameworksURL = "https://github.com/blinksh/openssl-apple/releases/download/v1.1.1k/openssl-dynamic.frameworks.zip"
-  
   static let frameworkName = "LibSSH"
   
-  static let platforms: [Platform] = Platform.allCases
+  static let platforms: [Platform] = Platform.allCases.filter { $0 != .Catalyst }
 }
 
 extension Platform {
+  var opensslPlatform: String {
+    sdk
+  }
+
   var deploymentTarget: String {
     switch self {
     case .AppleTVOS, .AppleTVSimulator,
@@ -28,41 +29,29 @@ extension Platform {
 }
 
 
+try sh("git submodule update --init")
+
 try? sh("rm -rf libssh")
 try sh("git clone --depth 1 \(Config.libsshOrigin) --branch \(Config.libsshBranch)")
 
-try download(url: Config.opensslLibsURL)
-try? sh("rm -rf openssl")
-try? sh("mkdir -p openssl")
-try sh("unzip openssl-libs.zip -d openssl")
-
-try download(url: Config.opensslFrameworksURL)
-try? sh("rm -rf openssl-frameworks")
-try? sh("mkdir -p openssl-frameworks")
-try sh("unzip openssl-dynamic.frameworks.zip -d openssl-frameworks")
-
-
 let fm = FileManager.default
 let cwd = fm.currentDirectoryPath
-let opensslLibsRoot = "\(cwd)/openssl/libs/"
+let opensslRoot = "\(cwd)/openssl-kz"
 let toolchain = "\(cwd)/apple.cmake"
 
-try write(content: appleCMake(), atPath: toolchain)
 
 var dynamicFrameworkPaths: [String] = []
 var staticFrameworkPaths: [String] = []
 
 for p in Config.platforms {
-  let ldflags = "-fembed-bitcode"
-  let cflags = "-fembed-bitcode -fobjc-arc"
-  let cppflags = "-fembed-bitcode -fobjc-arc"
+  let cflags = "-fobjc-arc"
+  let cppflags = "-fobjc-arc"
 
   var env = try [
     "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "",
     "APPLE_PLATFORM": p.sdk,
     "APPLE_SDK_PATH": p.sdkPath(),
-    "SECOND_FIND_ROOT_PATH": "\(opensslLibsRoot + p.name)/openssl",
-    "LDFLAGS": ldflags,
+    "SECOND_FIND_ROOT_PATH": "\(opensslRoot)/\(p.opensslPlatform)",
     "CFLAGS": cflags,
     "CPPFLAGS": cppflags
   ]
@@ -75,11 +64,6 @@ for p in Config.platforms {
   for arch in p.archs {
     
     print(env)
-    
-    if p == .Catalyst {
-      env["LDFLAGS"] = ldflags + " -target \(arch)-apple-ios14.0-macabi"
-      env["CFLAGS"] = cflags + " -target \(arch)-apple-ios14.0-macabi"
-    }
     
     let libPath = "lib/\(p.name)-\(arch).sdk"
     let binPath = "bin/\(p.name)-\(arch).sdk"
@@ -97,15 +81,12 @@ for p in Config.platforms {
       "-DCMAKE_C_COMPILER=\(p.ccPath())",
       "-DCMAKE_OSX_ARCHITECTURES=\(arch)",
       "-DCMAKE_OSX_DEPLOYMENT_TARGET=\(p.deploymentTarget)",
-      "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+      "-DCMAKE_POLICY_VERSION_MINIMUM=3.16",
       "-DBUILD_SHARED_LIBS=OFF",
       "-DWITH_EXAMPLES=OFF",
       "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
       "-DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO",
       "-DCMAKE_SYSTEM_PROCESSOR=\(arch)",
-//      "-DCMAKE_C_FLAGS=\"-target x86_64-apple-ios13.0-macabi -mios-version-min=13.0 -isystem \(try p.sdkPath())/System/iOSSupport/usr/include -iframework /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.1.sdk/System/iOSSupport/System/Library/Frameworks\"",
-//      "-DCMAKE_CXX_FLAGS=\"-target x86_64-apple-ios13.0-macabi -mios-version-min=13.0\"",
-//      "-DCMAKE_LDFLAGS=\"-target x86_64-apple-ios13.0-macabi  -L/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/swift/maccatalyst  -L/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.1.sdk/System/iOSSupport/usr/lib -iframework /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX11.1.sdk/System/iOSSupport/System/Library/Frameworks \"",
       "-DCMAKE_INSTALL_PREFIX=\(libPath)"
       , env: env)
     
@@ -129,13 +110,12 @@ for p in Config.platforms {
     try sh(
       "ld",
       "\(binPath)/obj/*.o",
-      "-bitcode_bundle",
       "-dylib",
       "-lSystem",
       "-lz",
-      "-Fopenssl-frameworks/\(p.name)",
+      "-F\(opensslRoot)/Frameworks/\(p.opensslPlatform)",
       "-framework Foundation",
-      "-framework openssl",
+      "-framework OpenSSL",
       "-arch \(arch)",
       "-\(p.plistMinSDKVersionName) \(p.deploymentTarget)",
       "-syslibroot \(p.sdkPath())",
@@ -200,7 +180,7 @@ for p in Config.platforms {
   
   try sh("lipo -create \(dylibFiles.joined(separator: " ")) -output \(frameworkDynamicPath)/\(Config.frameworkName)")
   
-  if p == .MacOSX || p == .Catalyst {
+  if p == .MacOSX {
     for path in [frameworkStaticPath, frameworkDynamicPath] {
       try repackFrameworkToMacOS(at: path, name: Config.frameworkName)
     }

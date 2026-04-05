@@ -97,6 +97,7 @@ for p in Config.platforms {
       "-DCMAKE_C_COMPILER=\(p.ccPath())",
       "-DCMAKE_OSX_ARCHITECTURES=\(arch)",
       "-DCMAKE_OSX_DEPLOYMENT_TARGET=\(p.deploymentTarget)",
+      "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
       "-DBUILD_SHARED_LIBS=OFF",
       "-DWITH_EXAMPLES=OFF",
       "-DCMAKE_BUILD_TYPE=RelWithDebInfo",

@@ -1,0 +1,77 @@
+From 788c66e69c20c4acc54ee80205e2e8cfa2ff25ed Mon Sep 17 00:00:00 2001
+From: Carlos Cabanero <carlos@blink.sh>
+Date: Thu, 16 Apr 2026 16:36:11 -0400
+Subject: [PATCH] Patch 10: Client-side keepalive
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Reintroduces ssh_client_send_keepalive() from the legacy 0.9.8 Blink
+fork (commits 74eac40a + bbb80ec7). Upstream's ssh_send_keepalive() is
+gated behind WITH_SERVER and uses ssh_global_request() with
+SSH_TIMEOUT_DEFAULT, which blocks waiting for the peer's
+REQUEST_FAILURE reply and shares global_req_state with other in-flight
+requests — both unsuitable for a non-blocking dispatch-runloop client.
+
+This version is fire-and-forget: pack, send, pump the socket once with
+SSH_TIMEOUT_NONBLOCKING, return. The outgoing write is the diagnostic —
+it lets TCP surface broken paths via the socket error path, and keeps
+NAT/middlebox flow state warm on mobile networks.
+---
+ include/libssh/libssh.h |  2 ++
+ src/client.c            | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 30 insertions(+)
+
+diff --git a/include/libssh/libssh.h b/include/libssh/libssh.h
+index 814dddab..21d03127 100644
+--- a/include/libssh/libssh.h
++++ b/include/libssh/libssh.h
+@@ -1013,6 +1013,8 @@ ssh_sk_resident_keys_load(const struct ssh_pki_ctx_struct *pki_context,
+                           ssh_key **resident_keys_result,
+                           size_t *num_keys_found_result);
+ 
++LIBSSH_API int ssh_client_send_keepalive(ssh_session session);
++
+ #ifndef LIBSSH_LEGACY_0_4
+ #include "libssh/legacy.h"
+ #endif
+diff --git a/src/client.c b/src/client.c
+index 97efe454..047da9cf 100644
+--- a/src/client.c
++++ b/src/client.c
+@@ -928,4 +928,32 @@ const char *ssh_copyright(void)
+            "Distributed under the LGPL, please refer to COPYING "
+            "file for information about your rights";
+ }
++
++int ssh_client_send_keepalive(ssh_session session)
++{
++  int rc;
++
++  rc = ssh_buffer_pack(session->out_buffer,
++                       "bsb",
++                       SSH2_MSG_GLOBAL_REQUEST,
++                       "keepalive@openssh.com",
++                       1);
++  if (rc != SSH_OK) {
++    goto err;
++  }
++
++  if (ssh_packet_send(session) == SSH_ERROR) {
++    goto err;
++  }
++
++  ssh_handle_packets(session, SSH_TIMEOUT_NONBLOCKING);
++
++  SSH_LOG(SSH_LOG_PACKET, "Sent a keepalive");
++  return SSH_OK;
++
++err:
++  ssh_set_error_oom(session);
++  ssh_buffer_reinit(session->out_buffer);
++  return SSH_ERROR;
++}
+ /** @} */
+-- 
+2.50.1 (Apple Git-155)
+

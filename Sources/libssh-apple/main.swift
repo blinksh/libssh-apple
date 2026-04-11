@@ -5,12 +5,14 @@ OutputLevel.default = .error
 
 enum Config {
   static let libsshOrigin = "https://github.com/blinksh/libssh.git"
-  static let libsshBranch = "LibSSHBlockRunLoop"
-  static let libsshVersion = "0.9.8"
+  static let libsshBranch = "blink-libssh-0.12.0"
+  static let libsshVersion = "0.12.0"
   
   static let frameworkName = "LibSSH"
   
-  static let platforms: [Platform] = Platform.allCases.filter { $0 != .Catalyst }
+  //static let platforms: [Platform] = Platform.allCases.filter { $0 != .Catalyst }
+  static let platforms: [Platform] = [.iPhoneOS, .iPhoneSimulator]
+  //static let platforms: [Platform] = [Platform.MacOSX]
 }
 
 extension Platform {
@@ -24,6 +26,19 @@ extension Platform {
          .iPhoneOS, .iPhoneSimulator: return "14.0"
     case .MacOSX, .Catalyst: return "11.0"
     case .WatchOS, .WatchSimulator: return "7.0"
+    }
+  }
+
+  var ldPlatformName: String {
+    switch self {
+    case .MacOSX: return "macos"
+    case .Catalyst: return "mac-catalyst"
+    case .iPhoneOS: return "ios"
+    case .iPhoneSimulator: return "ios-simulator"
+    case .AppleTVOS: return "tvos"
+    case .AppleTVSimulator: return "tvos-simulator"
+    case .WatchOS: return "watchos"
+    case .WatchSimulator: return "watchos-simulator"
     }
   }
 }
@@ -43,7 +58,14 @@ let toolchain = "\(cwd)/apple.cmake"
 var dynamicFrameworkPaths: [String] = []
 var staticFrameworkPaths: [String] = []
 
-for p in Config.platforms {
+// arm64e is excluded because the OpenSSL frameworks we link against
+// (krzyzanowskim) don't ship an arm64e slice.
+let platformBuilds: [(Platform, [Platform.Arch])] = Config.platforms.compactMap { p in
+  let archs = p.archs.filter { $0 != .arm64e }
+  return archs.isEmpty ? nil : (p, archs)
+}
+
+for (p, buildArchs) in platformBuilds {
   let cflags = "-fobjc-arc"
   let cppflags = "-fobjc-arc"
 
@@ -61,8 +83,8 @@ for p in Config.platforms {
   dynamicFrameworkPaths.append(frameworkDynamicPath)
   staticFrameworkPaths.append(frameworkStaticPath)
   
-  for arch in p.archs {
-    
+  for arch in buildArchs {
+
     print(env)
     
     let libPath = "lib/\(p.name)-\(arch).sdk"
@@ -84,6 +106,7 @@ for p in Config.platforms {
       "-DCMAKE_POLICY_VERSION_MINIMUM=3.16",
       "-DBUILD_SHARED_LIBS=OFF",
       "-DWITH_EXAMPLES=OFF",
+      "-DWITH_EXEC=OFF",
       "-DCMAKE_BUILD_TYPE=RelWithDebInfo",
       "-DCMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH=NO",
       "-DCMAKE_SYSTEM_PROCESSOR=\(arch)",
@@ -98,7 +121,7 @@ for p in Config.platforms {
     )
     
     try? mkdir("\(binPath)/tmp")
-    
+
     // 1. makeing dylib
     
     try? mkdir("\(binPath)/obj")
@@ -117,7 +140,7 @@ for p in Config.platforms {
       "-framework Foundation",
       "-framework OpenSSL",
       "-arch \(arch)",
-      "-\(p.plistMinSDKVersionName) \(p.deploymentTarget)",
+      "-platform_version \(p.ldPlatformName) \(p.deploymentTarget) \(p.deploymentTarget)",
       "-syslibroot \(p.sdkPath())",
       "-compatibility_version 1.0.0",
       "-current_version 1.0.0",
@@ -142,11 +165,7 @@ for p in Config.platforms {
     )
   }
   
-  guard
-    let arch = p.archs.first
-  else {
-    continue
-  }
+  let arch = buildArchs[0]
   
   let libPath = "lib/\(p.name)-\(arch).sdk"
   
@@ -168,13 +187,13 @@ for p in Config.platforms {
     try write(content: moduleMap, atPath: "\(path)/Modules/module.modulemap")
   }
   
-  let aFiles = p.archs.map { arch -> String in
+  let aFiles = buildArchs.map { arch -> String in
     "bin/\(p.name)-\(arch).sdk/tmp/*.a"
   }
-  
+
   try sh("libtool -static -o \(frameworkStaticPath)/\(Config.frameworkName) \(aFiles.joined(separator: " "))")
-  
-  let dylibFiles = p.archs.map { arch -> String in
+
+  let dylibFiles = buildArchs.map { arch -> String in
     "bin/\(p.name)-\(arch).sdk/\(Config.frameworkName)"
   }
   

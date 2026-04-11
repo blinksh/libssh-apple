@@ -1,0 +1,306 @@
+From 180edcdea2dda16684910e7211c2a9c11d920d81 Mon Sep 17 00:00:00 2001
+From: Carlos Cabanero <carlos@blink.sh>
+Date: Sat, 11 Apr 2026 15:31:30 -0400
+Subject: [PATCH] Patch 04: Custom callbacks
+
+- callbacks.h: forward channel open, proxycommand, session exception typedefs
+  and fields in ssh_callbacks_struct; thread_ssh_execute_command extern
+- libssh.h: ssh_agent_callback typedef, ssh_set_agent_callback declaration
+- agent.h: callback/userdata fields in ssh_agent_struct
+- agent.c: ssh_set_agent_callback(), callback path in agent_talk(),
+  callback check in ssh_agent_is_running()
+- client.c: session_exception_function invocation on error,
+  proxycommand call updated with session param
+- messages.c: channel_open_request_forward_function handler
+---
+ include/libssh/agent.h     |  3 +++
+ include/libssh/callbacks.h | 11 +++++++++++
+ include/libssh/libssh.h    |  3 +++
+ include/libssh/socket.h    |  2 +-
+ src/agent.c                | 25 ++++++++++++++++++++++++-
+ src/client.c               | 16 ++++++++--------
+ src/misc.c                 |  9 +++++++--
+ src/socket.m               | 27 ++++++++++++++++++++-------
+ 8 files changed, 77 insertions(+), 19 deletions(-)
+
+diff --git a/include/libssh/agent.h b/include/libssh/agent.h
+index caf8d3e2..85d80e22 100644
+--- a/include/libssh/agent.h
++++ b/include/libssh/agent.h
+@@ -79,6 +79,8 @@ struct ssh_agent_struct {
+   ssh_buffer ident;
+   unsigned int count;
+   ssh_channel channel;
++  ssh_agent_callback callback;
++  void *userdata;
+ };
+ 
+ /* agent.c */
+@@ -120,6 +122,7 @@ ssh_string ssh_agent_sign_data(ssh_session session,
+                                struct ssh_buffer_struct *data);
+ 
+ #ifdef __cplusplus
++
+ }
+ #endif
+ 
+diff --git a/include/libssh/callbacks.h b/include/libssh/callbacks.h
+index e4ecf726..617cfd89 100644
+--- a/include/libssh/callbacks.h
++++ b/include/libssh/callbacks.h
+@@ -150,6 +150,10 @@ typedef ssh_channel (*ssh_channel_open_request_x11_callback) (ssh_session sessio
+ typedef ssh_channel (*ssh_channel_open_request_auth_agent_callback) (ssh_session session,
+       void *userdata);
+ 
++typedef void (*ssh_session_set_proxycommand_callback) (const char *command, socket_t in, socket_t out, void *userdata);
++
++typedef void (*ssh_session_exception_callback) (ssh_session session, void *userdata);
++
+ /**
+  * @brief Handles an SSH new channel open "forwarded-tcpip" request. This
+  * happens when the server forwards an incoming TCP connection on a port it was
+@@ -193,6 +197,7 @@ struct ssh_callbacks_struct {
+    * percentage of connection steps completed.
+    */
+   ssh_connect_status_callback connect_status_function;
++  ssh_session_set_proxycommand_callback set_proxycommand_function;
+   /**
+    * This function will be called each time a global request is received.
+    */
+@@ -203,6 +208,7 @@ struct ssh_callbacks_struct {
+   /** This function will be called when an incoming "auth-agent" request is received.
+    */
+   ssh_channel_open_request_auth_agent_callback channel_open_request_auth_agent_function;
++  ssh_session_exception_callback session_exception_function;
+   /**
+    * This function will be called when an incoming "forwarded-tcpip"
+    * request is received.
+@@ -1140,6 +1146,11 @@ LIBSSH_API int ssh_set_log_callback(ssh_logging_callback cb);
+  */
+ LIBSSH_API ssh_logging_callback ssh_get_log_callback(void);
+ 
++#ifdef WITH_EXEC
++//external thread
++extern __thread void (*thread_ssh_execute_command)(const char *command, socket_t in, socket_t out);
++#endif /* WITH_EXEC */
++
+ /**
+  * @brief SSH proxyjump before connection callback. Called before calling
+  * ssh_connect()
+diff --git a/include/libssh/libssh.h b/include/libssh/libssh.h
+index aa7b9ef1..814dddab 100644
+--- a/include/libssh/libssh.h
++++ b/include/libssh/libssh.h
+@@ -721,6 +721,8 @@ enum ssh_file_format_e {
+     SSH_FILE_FORMAT_PEM,
+ };
+ 
++typedef int (*ssh_agent_callback) (void *data, uint32_t len, struct ssh_buffer_struct *reply, void *userdata);
++
+ LIBSSH_API ssh_key ssh_key_new(void);
+ #define SSH_KEY_FREE(x) \
+     do { if ((x) != NULL) { ssh_key_free(x); x = NULL; } } while(0)
+@@ -816,6 +818,7 @@ LIBSSH_API int ssh_select(ssh_channel *channels, ssh_channel *outchannels, socke
+ LIBSSH_API int ssh_service_request(ssh_session session, const char *service);
+ LIBSSH_API int ssh_set_agent_channel(ssh_session session, ssh_channel channel);
+ LIBSSH_API int ssh_set_agent_socket(ssh_session session, socket_t fd);
++LIBSSH_API int ssh_set_agent_callback(ssh_session session, ssh_agent_callback cb, void *userdata);
+ LIBSSH_API void ssh_set_blocking(ssh_session session, int blocking);
+ LIBSSH_API void ssh_set_counters(ssh_session session, ssh_counter scounter,
+                                  ssh_counter rcounter);
+diff --git a/include/libssh/socket.h b/include/libssh/socket.h
+index 12080be6..aeefbdcb 100644
+--- a/include/libssh/socket.h
++++ b/include/libssh/socket.h
+@@ -39,8 +39,8 @@ void ssh_socket_set_connected(ssh_socket s, struct ssh_poll_handle_struct *p);
+ int ssh_socket_unix(ssh_socket s, const char *path);
+ #if WITH_EXEC
+ void ssh_execute_command(const char *command, socket_t in, socket_t out);
+-int ssh_socket_connect_proxycommand(ssh_session session, ssh_socket s, const char *command);
+ #endif
++int ssh_socket_connect_proxycommand(ssh_session session, ssh_socket s, const char *command);
+ int ssh_socket_connect_proxyjump(ssh_socket s);
+ void ssh_socket_close(ssh_socket s);
+ int ssh_socket_write(ssh_socket s,const void *buffer, uint32_t len);
+diff --git a/src/agent.c b/src/agent.c
+index bb1669c3..33322d28 100644
+--- a/src/agent.c
++++ b/src/agent.c
+@@ -213,6 +213,18 @@ int ssh_set_agent_socket(ssh_session session, socket_t fd)
+     return ssh_socket_set_fd(session->agent->sock, fd);
+ }
+ 
++int ssh_set_agent_callback(ssh_session session, ssh_agent_callback cb, void *userdata) {
++  if (!session || !cb)
++    return SSH_ERROR;
++  if (!session->agent){
++    ssh_set_error(session, SSH_REQUEST_DENIED, "Session has no active agent");
++    return SSH_ERROR;
++  }
++  session->agent->callback = cb;
++  session->agent->userdata = userdata;
++  return 0;
++}
++
+ /**
+  * @}
+  */
+@@ -298,6 +310,15 @@ static int agent_talk(struct ssh_session_struct *session,
+     SSH_LOG(SSH_LOG_TRACE, "Request length: %" PRIu32, len);
+     PUSH_BE_U32(payload, 0, len);
+ 
++    if (session->agent->callback != NULL) {
++      len = session->agent->callback(ssh_buffer_get(request), len, reply, session->agent->userdata);
++      if (len <= 0) {
++        SSH_LOG(SSH_LOG_WARN, "Error calling agent");
++        return -1;
++      }
++      return 0;
++    }
++
+     /* send length and then the request packet */
+     if (atomicio(session->agent, payload, 4, 0) == 4) {
+         if (atomicio(session->agent, ssh_buffer_get(request), len, 0) != len) {
+@@ -500,7 +521,9 @@ int ssh_agent_is_running(ssh_session session)
+         return 0;
+     }
+ 
+-    if (ssh_socket_is_open(session->agent->sock)) {
++    if (session->agent->callback != NULL) {
++        return 1;
++    } else if (ssh_socket_is_open(session->agent->sock)) {
+         return 1;
+     } else {
+         if (agent_connect(session) < 0) {
+diff --git a/src/client.c b/src/client.c
+index 0d01d373..97efe454 100644
+--- a/src/client.c
++++ b/src/client.c
+@@ -519,6 +519,10 @@ static void ssh_client_connection_callback(ssh_session session)
+ 
+     return;
+ error:
++    session->session_state=SSH_SESSION_STATE_ERROR;
++    if (session->common.callbacks && session->common.callbacks->session_exception_function) {
++        session->common.callbacks->session_exception_function(session, session->common.callbacks->userdata);
++    }
+     ssh_session_socket_close(session);
+     SSH_LOG(SSH_LOG_WARN, "%s", ssh_get_error(session));
+ }
+@@ -629,15 +633,11 @@ int ssh_connect(ssh_session session)
+ #endif /* HAVE_PTHREAD */
+ #endif /* _WIN32 */
+     } else if (session->opts.ProxyCommand != NULL) {
+-#ifdef WITH_EXEC
+-        ret = ssh_socket_connect_proxycommand(session->socket,
++        /* The dispatcher always compiles; fork/exec internals are gated by
++         * WITH_EXEC inside socket.m. When WITH_EXEC=OFF, execution is
++         * delegated entirely to the set_proxycommand_function callback. */
++        ret = ssh_socket_connect_proxycommand(session, session->socket,
+                 session->opts.ProxyCommand);
+-#else
+-        ssh_set_error(session,
+-                      SSH_FATAL,
+-                      "The libssh is built without support for proxy commands.");
+-        ret = SSH_ERROR;
+-#endif /* WITH_EXEC */
+     } else {
+         ret = ssh_socket_connect(session->socket,
+                                  session->opts.host,
+diff --git a/src/misc.c b/src/misc.c
+index 0d702f7b..e7ae4b33 100644
+--- a/src/misc.c
++++ b/src/misc.c
+@@ -2425,9 +2425,14 @@ ssh_proxyjumps_free(struct ssh_list *proxy_jump_list)
+ bool
+ ssh_libssh_proxy_jumps(void)
+ {
+-    const char *t = getenv("OPENSSH_PROXYJUMP");
++    /* const char *t = getenv("OPENSSH_PROXYJUMP");
+ 
+-    return !(t != NULL && t[0] == '1');
++       return !(t != NULL && t[0] == '1'); */
++
++    /* Blink: Force the selector to false so ssh_config_parse_proxy_jump()
++     * synthesizes a ProxyCommand line, which routes through
++     * set_proxycommand_function callback instead. */
++    return false;
+ }
+ 
+ /**
+diff --git a/src/socket.m b/src/socket.m
+index a7718904..75e37bd2 100644
+--- a/src/socket.m
++++ b/src/socket.m
+@@ -1587,10 +1587,13 @@ int ssh_socket_connect(ssh_socket s,
+     dup2(out, 2);
+     close(in);
+     close(out);
+-    /* BLINK execv(args[0],(char * const *)args); */
++    execv(args[0], (char * const *)args);
+     exit(1);
+ }
+ 
++__thread void (*thread_ssh_execute_command)(const char *command, socket_t in, socket_t out) = NULL;
++#endif /* WITH_EXEC */
++
+ /**
+  * @internal
+  * @brief Open a socket on a ProxyCommand
+@@ -1599,15 +1602,15 @@ int ssh_socket_connect(ssh_socket s,
+  * @param command Command to execute.
+  * @returns `SSH_OK` socket is being connected.
+  * @returns `SSH_ERROR` error while executing the command.
++ *
++ * Under WITH_EXEC=OFF (Blink/dispatch build) execution is delegated to
++ * the set_proxycommand_function callback; if no callback is registered
++ * the call fails cleanly instead of falling through to fork/exec.
+  */
+-
+-__thread void (*thread_ssh_execute_command)(const char *command, socket_t in, socket_t out) = NULL;
+-
+ int
+ ssh_socket_connect_proxycommand(ssh_session session, ssh_socket s, const char *command)
+ {
+     socket_t pair[2];
+-    int pid;
+     int rc;
+ 
+     if (s->state != SSH_SOCKET_NONE) {
+@@ -1623,13 +1626,24 @@ int ssh_socket_connect(ssh_socket s,
+     if (session->common.callbacks && ssh_callbacks_exists(session->common.callbacks, set_proxycommand_function)) {
+         session->common.callbacks->set_proxycommand_function(command, pair[0], pair[0],
+                                                              session->common.callbacks->userdata);
++#ifdef WITH_EXEC
+     } else if (thread_ssh_execute_command != NULL) {
+         (*thread_ssh_execute_command)(command, pair[0], pair[0]);
+     } else {
+-        pid = 0; /* BLINK fork(); */
++        int pid = fork();
+         if (pid == 0) {
+             ssh_execute_command(command, pair[0], pair[0]);
+         }
++#else
++    } else {
++        SSH_LOG(SSH_LOG_WARN,
++                "ssh_socket_connect_proxycommand: no set_proxycommand_function "
++                "callback registered and WITH_EXEC=OFF; cannot run '%s'",
++                command);
++        close(pair[0]);
++        close(pair[1]);
++        return SSH_ERROR;
++#endif /* WITH_EXEC */
+     }
+ #ifndef HAVE_DISPATCH_H
+     close(pair[0]);
+@@ -1663,7 +1677,6 @@ int ssh_socket_connect(ssh_socket s,
+ 
+     return SSH_OK;
+ }
+-#endif /* WITH_EXEC */
+ 
+ #ifndef _WIN32
+ #ifdef HAVE_PTHREAD
+-- 
+2.50.1 (Apple Git-155)
+

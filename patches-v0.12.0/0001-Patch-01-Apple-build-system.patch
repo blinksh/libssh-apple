@@ -1,0 +1,109 @@
+From 8bf00e241b12457d15ce2d98aa22a395d3c6ac72 Mon Sep 17 00:00:00 2001
+From: Carlos Cabanero <carlos@blink.sh>
+Date: Wed, 15 Apr 2026 11:05:43 -0400
+Subject: [PATCH] Patch 01: Apple build system
+
+- ConfigureChecks.cmake: dispatch/libdispatch detection for Apple
+- DefineOptions.cmake: GSSAPI OFF, symbol versioning OFF, WITH_EXEC OFF on Apple
+- config.h.cmake: HAVE_DISPATCH_H define
+- src/CMakeLists.txt: session.c->session.m, socket.c->socket.m,
+  relax -Werror for session.m/socket.m (decl-after-statement, unused vars)
+---
+ ConfigureChecks.cmake |  9 +++++++++
+ DefineOptions.cmake   |  8 ++++++--
+ config.h.cmake        |  2 ++
+ src/CMakeLists.txt    | 10 ++++++++--
+ 4 files changed, 25 insertions(+), 4 deletions(-)
+
+diff --git a/ConfigureChecks.cmake b/ConfigureChecks.cmake
+index 4e32ea53..b7981ad9 100644
+--- a/ConfigureChecks.cmake
++++ b/ConfigureChecks.cmake
+@@ -153,6 +153,15 @@ if (NOT WIN32)
+   check_function_exists(snprintf HAVE_SNPRINTF)
+ endif (NOT WIN32)
+ 
++if (APPLE)
++  # libdispatch
++  check_include_file(dispatch/dispatch.h HAVE_DISPATCH_H)
++  check_library_exists(dispatch dispatch_queue_set_specific "" HAVE_LIBDISPATCH)
++  if (HAVE_LIBDISPATCH)
++      set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES} dispatch)
++  endif (HAVE_LIBDISPATCH)
++endif (APPLE)
++
+ if (WIN32)
+     check_symbol_exists(vsnprintf "stdio.h" HAVE_VSNPRINTF)
+     check_symbol_exists(snprintf "stdio.h" HAVE_SNPRINTF)
+diff --git a/DefineOptions.cmake b/DefineOptions.cmake
+index f788dec5..c149dbfe 100644
+--- a/DefineOptions.cmake
++++ b/DefineOptions.cmake
+@@ -1,4 +1,4 @@
+-option(WITH_GSSAPI "Build with GSSAPI support" ON)
++option(WITH_GSSAPI "Build with GSSAPI support" OFF)
+ option(WITH_ZLIB "Build with ZLIB support" ON)
+ option(WITH_SFTP "Build with SFTP support" ON)
+ option(WITH_SERVER "Build with SSH server support" ON)
+@@ -27,7 +27,7 @@ option(WITH_BENCHMARKS
+        "Build benchmarks tools; enables unit testing and client tests" OFF)
+ option(WITH_EXAMPLES "Build examples" ON)
+ option(WITH_NACL "Build with libnacl (curve25519)" ON)
+-option(WITH_SYMBOL_VERSIONING "Build with symbol versioning" ON)
++option(WITH_SYMBOL_VERSIONING "Build with symbol versioning" OFF)
+ option(WITH_ABI_BREAK "Allow ABI break" OFF)
+ option(WITH_GEX "Enable DH Group exchange mechanisms" ON)
+ option(
+@@ -107,3 +107,7 @@ endif (FUZZ_TESTING)
+ if (WIN32)
+     set(WITH_EXEC 0)
+ endif (WIN32)
++
++if (APPLE)
++    set(WITH_EXEC 0)
++endif (APPLE)
+diff --git a/config.h.cmake b/config.h.cmake
+index 14e1031c..fcde327b 100644
+--- a/config.h.cmake
++++ b/config.h.cmake
+@@ -103,6 +103,8 @@
+ /* Define to 1 if you have gl_flags as a glob_t struct member */
+ #cmakedefine HAVE_GLOB_GL_FLAGS_MEMBER 1
+ 
++#cmakedefine HAVE_DISPATCH_H 1
++
+ /* Define to 1 if you have gcrypt with ChaCha20/Poly1305 support */
+ #cmakedefine HAVE_GCRYPT_CHACHA_POLY 1
+ 
+diff --git a/src/CMakeLists.txt b/src/CMakeLists.txt
+index a46f585b..ace9c49a 100644
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -126,9 +126,9 @@ set(libssh_SRCS
+   pki_context.c
+   pki_container_openssh.c
+   poll.c
+-  session.c
++  session.m
+   scp.c
+-  socket.c
++  socket.m
+   string.c
+   threads.c
+   ttyopts.c
+@@ -146,6 +146,12 @@ if (DEFAULT_C_NO_DEPRECATION_FLAGS)
+                                     COMPILE_FLAGS ${DEFAULT_C_NO_DEPRECATION_FLAGS})
+ endif()
+ 
++if (APPLE)
++    set_source_files_properties(session.m socket.m
++                                PROPERTIES
++                                    COMPILE_FLAGS "-Wno-error=declaration-after-statement -Wno-declaration-after-statement -Wno-error=unused-variable -Wno-error=unused-but-set-variable")
++endif()
++
+ if (CMAKE_USE_PTHREADS_INIT)
+     set(libssh_SRCS
+         ${libssh_SRCS}
+-- 
+2.50.1 (Apple Git-155)
+

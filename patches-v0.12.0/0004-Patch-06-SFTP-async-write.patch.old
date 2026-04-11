@@ -1,0 +1,166 @@
+From 9d96cdf1f75ea264f847ac02978581f79838fde0 Mon Sep 17 00:00:00 2001
+From: Carlos Cabanero <carlos@blink.sh>
+Date: Sat, 11 Apr 2026 15:31:51 -0400
+Subject: [PATCH 4/5] Patch 06: SFTP async write
+
+- sftp.h: sftp_async_write() and sftp_async_write_end() declarations
+- sftp.c: sftp_async_write() and sftp_async_write_end() implementations,
+  TODO comment on sftp_async_read_begin id overflow risk
+---
+ include/libssh/sftp.h | 32 ++++++++++++++++
+ src/sftp.c            | 89 +++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 121 insertions(+)
+
+diff --git a/include/libssh/sftp.h b/include/libssh/sftp.h
+index b7d6ad94..948ccfff 100644
+--- a/include/libssh/sftp.h
++++ b/include/libssh/sftp.h
+@@ -630,6 +630,38 @@ SSH_DEPRECATED LIBSSH_API int sftp_async_read(sftp_file file,
+  */
+ LIBSSH_API ssize_t sftp_write(sftp_file file, const void *buf, size_t count);
+ 
++/**
++ * @brief Start an asynchronous write to a file using an opened sftp file handle.
++ *
++ * @param  file          The opened sftp file handle to be written to.
++ *
++ * @param  buf           Pointer to buffer with the data to write.
++ *
++ * @param  count         Size of the buffer in bytes. It will be written as a
++ *                       SSH_FXP_WRITE packet.
++ *
++ * @param  id            Pointer to a uint32_t. The identifier is returned in id.
++ *
++ * @return               SSH_OK on success, SSH_ERROR on error.
++ */
++LIBSSH_API int sftp_async_write(sftp_file file, const void *buf, size_t count, uint32_t* id);
++
++/**
++ * @brief Wait for the response of an asynchronous write.
++ *
++ * @param  file          The opened sftp file handle to be written to.
++ *
++ * @param  id            The identifier returned by sftp_async_write.
++ *
++ * @param  blocking      If set to 1, the function will block until a response
++ *                       is received. If set to 0, the function will return
++ *                       SSH_AGAIN if no response has been received.
++ *
++ * @return               SSH_OK on success, SSH_ERROR on error, SSH_AGAIN if
++ *                       non-blocking and no response received yet.
++ */
++LIBSSH_API int sftp_async_write_end(sftp_file file, uint32_t id, int blocking);
++
+ /**
+  * @brief Deallocate memory corresponding to a sftp aio handle.
+  *
+diff --git a/src/sftp.c b/src/sftp.c
+index eb4d6614..7099643d 100644
+--- a/src/sftp.c
++++ b/src/sftp.c
+@@ -1289,6 +1289,7 @@ sftp_read(sftp_file handle, void *buf, size_t count)
+     return -1; /* not reached */
+ }
+ 
++// TODO: uint32_t id is converted to int when returning, API breaks if id>INT_MAX
+ /* Start an asynchronous read from a file using an opened sftp file handle. */
+ int
+ sftp_async_read_begin(sftp_file file, uint32_t len)
+@@ -1512,6 +1513,94 @@ sftp_write(sftp_file file, const void *buf, size_t count)
+     return -1; /* not reached */
+ }
+ 
++int sftp_async_write(sftp_file file, const void *buf, size_t count, uint32_t* id) {
++    sftp_session sftp = file->sftp;
++    ssh_buffer buffer;
++    ssize_t len;
++    size_t packetlen;
++    int rc;
++
++    buffer = ssh_buffer_new();
++    if (buffer == NULL) {
++        ssh_set_error_oom(sftp->session);
++        sftp_set_error(sftp, SSH_FX_FAILURE);
++        return SSH_ERROR;
++    }
++
++    *id = sftp_get_new_id(file->sftp);
++
++    rc = ssh_buffer_pack(buffer,
++                         "dSqdP",
++                         *id,
++                         file->handle,
++                         file->offset,
++                         (uint32_t)count,
++                         (size_t)count, buf);
++    if (rc != SSH_OK) {
++        ssh_set_error_oom(sftp->session);
++        SSH_BUFFER_FREE(buffer);
++        sftp_set_error(sftp, SSH_FX_FAILURE);
++        return SSH_ERROR;
++    }
++    len = sftp_packet_write(file->sftp, SSH_FXP_WRITE, buffer);
++    packetlen = ssh_buffer_get_len(buffer);
++    SSH_BUFFER_FREE(buffer);
++    if (len < 0) {
++        return SSH_ERROR;
++    } else if ((size_t)len != packetlen) {
++        SSH_LOG(SSH_LOG_PACKET, "Could not write as much data as expected");
++    }
++
++    file->offset += count;
++
++    return SSH_OK;
++}
++
++int sftp_async_write_end(sftp_file file, uint32_t id, int blocking) {
++    sftp_session sftp = file->sftp;
++    sftp_message msg = NULL;
++    sftp_status_message status;
++    int rc;
++
++    rc = sftp_recv_response_msg(sftp, id, blocking, &msg);
++    if (rc == SSH_ERROR || rc == SSH_AGAIN) {
++        return rc;
++    }
++
++    switch (msg->packet_type) {
++    case SSH_FXP_STATUS:
++        status = parse_status_msg(msg);
++        sftp_message_free(msg);
++        if (status == NULL) {
++            return SSH_ERROR;
++        }
++        sftp_set_error(sftp, status->status);
++        switch (status->status) {
++        case SSH_FX_OK:
++            status_msg_free(status);
++            return SSH_OK;
++        default:
++            break;
++        }
++        ssh_set_error(sftp->session,
++                      SSH_REQUEST_DENIED,
++                      "SFTP server: %s",
++                      status->errormsg);
++        status_msg_free(status);
++        return SSH_ERROR;
++    default:
++        ssh_set_error(sftp->session,
++                      SSH_FATAL,
++                      "Received message %d during write!",
++                      msg->packet_type);
++        sftp_message_free(msg);
++        sftp_set_error(sftp, SSH_FX_BAD_MESSAGE);
++        return SSH_ERROR;
++    }
++
++    return SSH_ERROR; /* not reached */
++}
++
+ /*  Seek to a specific location in a file. */
+ int
+ sftp_seek(sftp_file file, uint32_t new_offset)
+-- 
+2.50.1 (Apple Git-155)
+

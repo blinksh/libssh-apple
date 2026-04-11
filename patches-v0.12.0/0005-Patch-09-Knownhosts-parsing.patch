@@ -1,0 +1,26 @@
+From 46ad952cc827141e1a3301f63e55fe92b86300c9 Mon Sep 17 00:00:00 2001
+From: Carlos Cabanero <carlos@blink.sh>
+Date: Sat, 11 Apr 2026 15:32:17 -0400
+Subject: [PATCH] Patch 09: Knownhosts parsing
+
+- knownhosts.c: Continue parsing when encountering unreadable key type
+  (rc = SSH_AGAIN instead of failing)
+---
+ src/knownhosts.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/src/knownhosts.c b/src/knownhosts.c
+index 43eecf90..45d62a30 100644
+--- a/src/knownhosts.c
++++ b/src/knownhosts.c
+@@ -799,6 +799,7 @@ int ssh_known_hosts_parse_line(const char *hostname,
+                 "Failed to parse %s key for entry: %s!",
+                 ssh_key_type_to_char(key_type),
+                 e->unparsed);
++        rc = SSH_AGAIN;
+         goto out;
+     }
+ 
+-- 
+2.50.1 (Apple Git-155)
+

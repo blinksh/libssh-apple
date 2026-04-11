@@ -1,0 +1,149 @@
+--- SSH/SFTP.swift.orig	2026-04-11 17:22:46
++++ SSH/SFTP.swift	2026-04-11 17:24:36
+@@ -480,8 +480,8 @@
+   var rloop: RunLoop { sftpClient.rloop }
+   var log: SSHLogger { get { sftpClient.log } }
+   
+-  var inflightReads: [UInt32] = []
+-  var inflightWrites: [UInt32] = []
++  var inflightReads: [sftp_aio?] = []
++  var inflightWrites: [sftp_aio?] = []
+   let blockSize = 32 * 1024
+   let maxConcurrentOps = 20
+   var demand: Subscribers.Demand = .none
+@@ -578,12 +578,13 @@
+ 
+     // Schedule more blocks to read. This way data will already be ready when we come back.
+     while isComplete == false && inflightReads.count < self.maxConcurrentOps {
+-      let asyncRequest = sftp_async_read_begin(self.file, UInt32(self.blockSize))
+-      if asyncRequest < 0 {
++      var aio: sftp_aio? = nil
++      let requested = sftp_aio_begin_read(self.file, self.blockSize, &aio)
++      if requested < 0 {
+         pub.send(completion: .failure(FileError(title: "Could not pre-alloc request file", in: session)))
+         return
+       }
+-      inflightReads.append(UInt32(asyncRequest))
++      inflightReads.append(aio)
+     }
+         
+     if let data = data, data.count > 0 {
+@@ -613,40 +614,38 @@
+   
+   func readBlocks() throws -> (DispatchData, Bool) {
+     var data = DispatchData.empty
+-    let newReads: [UInt32] = []
+     var lastIdx = -1
+-    
+-    self.log.message("Reading blocks starting from \(inflightReads[0])", SSH_LOG_DEBUG)
+-    for (idx, block) in inflightReads.enumerated() {
++
++    self.log.message("Reading blocks, \(inflightReads.count) inflight", SSH_LOG_DEBUG)
++    for (idx, _) in inflightReads.enumerated() {
+       let buf = UnsafeMutableRawPointer.allocate(byteCount: self.blockSize, alignment: MemoryLayout<UInt8>.alignment)
+-      self.log.message("Reading \(block)", SSH_LOG_TRACE)
+-      let nbytes = sftp_async_read(self.file, buf, UInt32(self.blockSize), block)
+-      if nbytes > 0 {
+-        let bb = DispatchData(bytesNoCopy: UnsafeRawBufferPointer(start: buf, count: Int(nbytes)),
++      self.log.message("Reading block \(idx)", SSH_LOG_TRACE)
++      let nbytes = sftp_aio_wait_read(&inflightReads[idx], buf, self.blockSize)
++      if nbytes > 0 {  // data received
++        let bb = DispatchData(bytesNoCopy: UnsafeRawBufferPointer(start: buf, count: nbytes),
+                               deallocator: .custom(nil, { buf.deallocate() }))
+         data.append(bb)
+-        
++
+         lastIdx = idx
+       } else {
+         buf.deallocate()
+-        if nbytes == SSH_AGAIN {
++        if nbytes == SSH_AGAIN {  // aio handle preserved, try again later
+             self.log.message("readBlock AGAIN", SSH_LOG_TRACE)
+             break
+         } else if nbytes < 0 {
+           throw FileError(title: "Error while reading blocks", in: session)
+-        } else if nbytes == 0 {
++        } else if nbytes == 0 {  // EOF
+           inflightReads = []
+           return (data, true)
+         }
+       }
+     }
+-    
++
+     let blocksRead = lastIdx == -1 ? 0 : lastIdx + 1
+-    
+-    self.log.message("Blocks read \(blocksRead), size \(data.count), last block \(lastIdx == -1 ? 0 : inflightReads[lastIdx])", SSH_LOG_DEBUG)
++
++    self.log.message("Blocks read \(blocksRead), size \(data.count)", SSH_LOG_DEBUG)
+     inflightReads = Array(inflightReads[blocksRead...])
+-    inflightReads += newReads
+-    
++
+     return (data, false)
+   }
+ }
+@@ -697,24 +696,24 @@
+       
+       // Schedule more writes
+       while inflightWrites.count < self.maxConcurrentOps && write.count > 0 {
+-        var asyncRequest: UInt32 = 0
+         let length = write.count < self.blockSize ? write.count : self.blockSize
+-        
++
+         // Check if we can write, otherwise the async write will fail
+         if ssh_channel_window_size(self.channel) < length {
+           break
+         }
+-        
+-        let rc = write.withUnsafeBytes { bytes -> Int32 in
+-          return sftp_async_write(self.file, bytes, length, &asyncRequest)
++
++        var aio: sftp_aio? = nil
++        let rc = write.withUnsafeBytes { bytes -> ssize_t in
++          return sftp_aio_begin_write(self.file, bytes, length, &aio)
+         }
+-        
+-        if rc != SSH_OK {
++
++        if rc < 0 {
+           pb.send(completion: .failure(FileError(title: "Could not pre-alloc write request", in: session)))
+           return
+         }
+-        
+-        inflightWrites.append(asyncRequest)
++
++        inflightWrites.append(aio)
+         write = write.subdata(in: length..<write.count)
+       }
+       
+@@ -740,20 +739,21 @@
+   
+   func checkWrites() throws -> Int {
+     var lastIdx = 0
+-        
+-    for block in inflightWrites {
+-      self.log.message("sftp_async_write_end sent", SSH_LOG_DEBUG)
+-      let rc = sftp_async_write_end(self.file, block, 0)
+-      self.log.message("sftp_async_write_end \(rc)", SSH_LOG_DEBUG)
+-      if rc == SSH_AGAIN {
++
++    for idx in inflightWrites.indices {
++      self.log.message("sftp_aio_wait_write sent", SSH_LOG_DEBUG)
++      let rc = sftp_aio_wait_write(&inflightWrites[idx])
++      self.log.message("sftp_aio_wait_write \(rc)", SSH_LOG_DEBUG)
++      if rc == SSH_AGAIN {  // aio handle preserved, try again later
+         self.log.message("Write AGAIN", SSH_LOG_DEBUG)
+         break
+-      } else if rc != SSH_OK {
++      } else if rc < 0 {
+         throw FileError(title: "Error while writing block", in: session)
+       }
++      // rc > 0 means bytes written — success
+       lastIdx += 1
+     }
+-    
++
+     return lastIdx
+   }
+ }
